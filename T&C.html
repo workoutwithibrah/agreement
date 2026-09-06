@@ -831,6 +831,7 @@ async function loadSubmissions(){
         ${d.medical && d.medical.toLowerCase()!=='none' ? `<div class="meta">&#9888; Medical note: ${escapeHtml(d.medical)}</div>` : ''}
         <div class="actions">
           <button onclick='downloadRecord(${idx})'>Download PDF</button>
+          <button onclick='deleteRecord(${idx})' style="color:#b3261e;border-color:#f0c4c0;">Delete</button>
         </div>
       </div>`;
     }).join('');
@@ -843,6 +844,21 @@ function downloadRecord(idx){
   const d = cachedSubmissions[idx];
   if(!d){ alert('Could not generate PDF for this record.'); return; }
   triggerPdfDownload(d, null, null);
+}
+async function deleteRecord(idx){
+  const d = cachedSubmissions[idx];
+  if(!d) return;
+  const confirmed = confirm(`Delete the signed agreement for ${d.name}? This cannot be undone.`);
+  if(!confirmed) return;
+  try{
+    const { error } = await sb.from('submissions').delete().eq('id', d.id);
+    if(error) throw new Error(error.message);
+    loadSubmissions();
+  }catch(e){
+    console.error('Delete error', e);
+    alert('Could not delete this record. Please try again.');
+  }
+}
 }
 </script>
 </body>
