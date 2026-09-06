@@ -344,6 +344,7 @@
         <h2>Signed Agreements</h2>
         <span class="pill" id="subCount">0</span>
       </div>
+      <input type="text" id="searchInput" placeholder="Search by client name..." oninput="filterSubmissions()" style="width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:14px;border:1px solid #ddd;border-radius:8px;font-family:'Poppins',sans-serif;font-size:13.5px;">
       <div id="subList"></div>
       <div style="text-align:center;margin-top:18px;">
         <a onclick="trainerLogout()" style="font-size:12px;color:#888;cursor:pointer;">Log out</a>
@@ -411,7 +412,7 @@ function renderTerms(){
   const box = document.getElementById('termsBox');
   let html = '';
   TC_DATA.forEach(sec=>{
-    html += `<details><summary><span class="arrow">&#9654;</span> ${sec.num}. ${escapeHtml(sec.title)}</summary><div class="body">`;
+    html += `<details open><summary><span class="arrow">&#9654;</span> ${sec.num}. ${escapeHtml(sec.title)}</summary><div class="body">`;
     sec.blocks.forEach(b=>{
       if(b.type==='p'){ html += `<p>${escapeHtml(b.text)}</p>`; }
       else if(b.type==='h2'){ html += `<h4>${escapeHtml(b.text)}</h4>`; }
@@ -810,17 +811,24 @@ async function loadSubmissions(){
   listEl.innerHTML = '<div class="empty-state"><span class="spinner"></span>Loading...</div>';
   try{
     const records = await fetchSubmissions();
-    if(records.length===0){
-      listEl.innerHTML = '<div class="empty-state">No signed agreements yet.</div>';
-      document.getElementById('subCount').textContent = '0';
-      cachedSubmissions = [];
-      return;
-    }
     records.sort((a,b)=> new Date(b.created_at) - new Date(a.created_at));
     cachedSubmissions = records;
-    document.getElementById('subCount').textContent = records.length;
-    listEl.innerHTML = records.map((d, idx)=>{
-      return `<div class="sub-card">
+    document.getElementById('searchInput').value = '';
+    renderSubmissionList(cachedSubmissions);
+  }catch(e){
+    console.error('Load error', e);
+    listEl.innerHTML = '<div class="empty-state">Could not load submissions.</div>';
+  }
+}
+function renderSubmissionList(list){
+  const listEl = document.getElementById('subList');
+  document.getElementById('subCount').textContent = list.length;
+  if(list.length===0){
+    listEl.innerHTML = '<div class="empty-state">No matching signed agreements.</div>';
+    return;
+  }
+  listEl.innerHTML = list.map((d)=>{
+    return `<div class="sub-card">
         <div class="top">
           <div>
             <div class="name">${escapeHtml(d.name)}</div>
@@ -830,30 +838,36 @@ async function loadSubmissions(){
         </div>
         ${d.medical && d.medical.toLowerCase()!=='none' ? `<div class="meta">&#9888; Medical note: ${escapeHtml(d.medical)}</div>` : ''}
         <div class="actions">
-          <button onclick='downloadRecord(${idx})'>Download PDF</button>
-          <button onclick='deleteRecord(${idx})' style="color:#b3261e;border-color:#f0c4c0;">Delete</button>
+          <button onclick='downloadRecord(${JSON.stringify(d.id)})'>Download PDF</button>
+          <button onclick='deleteRecord(${JSON.stringify(d.id)})' style="color:#b3261e;border-color:#f0c4c0;">Delete</button>
         </div>
       </div>`;
-    }).join('');
-  }catch(e){
-    console.error('Load error', e);
-    listEl.innerHTML = '<div class="empty-state">Could not load submissions.</div>';
-  }
+  }).join('');
 }
-function downloadRecord(idx){
-  const d = cachedSubmissions[idx];
+function filterSubmissions(){
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  if(!q){
+    renderSubmissionList(cachedSubmissions);
+    return;
+  }
+  const filtered = cachedSubmissions.filter(d => (d.name || '').toLowerCase().includes(q));
+  renderSubmissionList(filtered);
+}
+function downloadRecord(id){
+  const d = cachedSubmissions.find(s=>s.id===id);
   if(!d){ alert('Could not generate PDF for this record.'); return; }
   triggerPdfDownload(d, null, null);
 }
-async function deleteRecord(idx){
-  const d = cachedSubmissions[idx];
+async function deleteRecord(id){
+  const d = cachedSubmissions.find(s=>s.id===id);
   if(!d) return;
   const confirmed = confirm(`Delete the signed agreement for ${d.name}? This cannot be undone.`);
   if(!confirmed) return;
   try{
     const { error } = await sb.from('submissions').delete().eq('id', d.id);
     if(error) throw new Error(error.message);
-    loadSubmissions();
+    cachedSubmissions = cachedSubmissions.filter(s=>s.id!==id);
+    filterSubmissions();
   }catch(e){
     console.error('Delete error', e);
     alert('Could not delete this record. Please try again.');
